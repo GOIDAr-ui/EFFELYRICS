@@ -8,10 +8,10 @@
 | `npm test` | 33 теста, 3 файла, все прошли |
 | `npm run typecheck` | Успешно |
 | `npm run build` | Vite production и Electron main/preload bundles собраны |
-| `AURORA_CHROMIUM=/usr/bin/chromium npm run test:e2e` | 3 сценария прошли: demo/TTML/пауза/seek/настройки/диагностика, узкое окно, модель preload с отсутствующими метаданными/сменой трека/потерей сессии |
+| `AURORA_CHROMIUM=/usr/bin/chromium npm run test:e2e` | 3 сценария прошли: demo/TTML/пауза/seek/настройки/диагностика, узкое окно, модель preload с отсутствующими метаданными/сменой трека/потерей сессии/неизвестной позицией |
 | `npm audit --omit=dev --audit-level=high` | 0 уязвимостей runtime-зависимостей на момент проверки |
 | `.NET publish`, Windows x64 self-contained | Успешно, WindowsMediaBridge.exe скомпилирован; выполнение не проверено |
-| `electron-builder --win portable --x64 --publish never` | Успешно, `release/Aurora-Lyrics-0.1.0-x64-portable.exe`, 137 273 795 байт |
+| `electron-builder --win portable --x64 --publish never` | Успешно, `release/Aurora-Lyrics-0.1.0-x64-portable.exe`, 137 258 056 байт |
 | Содержимое Windows-пакета | В app.asar есть renderer/main/preload, в resources/bridge — WindowsMediaBridge.exe |
 | `electron-builder --win nsis` | Не завершён: Linux требует Wine; штатный Wine 11 из electron-builder-binaries не запускается (`ntdll`, c0000135). Неполный установщик удалён |
 | Запуск Electron на Linux | Заблокирован отсутствием корректно установленного SUID sandbox; защита не отключалась |
@@ -21,7 +21,7 @@
 Portable SHA-256:
 
 ```text
-ed0b7bea06e2fb9abe46c66bed0261934737d839813d192adb086a49ccfb6edf
+4b3963639e7676aae57e77f6ff148494c56a67abc2a388e3fbbc564ddb466a81
 ```
 
 Для кросс-сборки использовались перенаправленные в `/workspace/.cache` npm/Electron caches без изменения HOME. .NET компилировался вне файловой песочницы, поскольку внутри неё не создавался mutex NuGet-Migrations. TLS и проверки контрольных сумм сохранялись. Electron runtime отдельно установлен штатным `install-electron` с checksum verification. Для Windows предназначен обычный `npm run dist:win`; Wine на Windows не нужен. Подпись сертификатом не настроена.

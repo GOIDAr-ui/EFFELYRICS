@@ -52,6 +52,9 @@ test('preload contract mock: optional metadata, imported lyrics, track switch an
   await expect(page.locator('.word.current')).toHaveText('Тестовый текст');
   await page.getByRole('button', { name: 'Воспроизвести', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('Тестовый отказ команды');
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('test:media', { detail: { connection: 'connected', trackId: 'a', playback: 'paused', position: null, duration: null } })));
+  await expect(page.locator('.word.current')).toHaveCount(0);
+  await expect(page.getByRole('slider', { name: 'Позиция воспроизведения' })).toHaveValue('0');
   await page.evaluate(() => window.dispatchEvent(new CustomEvent('test:media', { detail: { connection: 'connected', trackId: 'b', title: 'Другой трек', playback: 'paused', position: 0, duration: 15, capabilities: { toggle: true } } })));
   await expect(page.getByRole('heading', { name: 'Другой трек' })).toBeVisible();
   await expect(page.locator('.word.current')).toHaveCount(0);
