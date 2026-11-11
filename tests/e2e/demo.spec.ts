@@ -90,3 +90,25 @@ test('system seek preview, pointer commit, actual timeline and IPC failure', asy
  await page.mouse.move(box.x+box.width*.75,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width*.5,box.y+box.height/2,{steps:8});await page.mouse.up();await expect.poll(async()=>Number(await slider.inputValue())).toBeLessThan(25);
  await slider.fill('2');await slider.dispatchEvent('pointerup');await expect(page.getByText('Ошибка IPC перемотки. Показано фактическое время.',{exact:true})).toBeVisible();await expect.poll(async()=>Number(await slider.inputValue())).toBeGreaterThan(10);
 });
+test('individual letters: waiting, partial, full, sung, pause and backward seek', async ({ page }) => {
+ await page.goto('/');await page.getByRole('button',{name:'Деморежим',exact:true}).click();
+ const slider=page.getByRole('slider',{name:'Позиция воспроизведения'});
+ const first=page.locator('[data-word-id="demo-word-0-0"]');
+ const future=page.locator('[data-word-id="demo-word-0-2"]');
+ const levels=()=>first.locator('[data-letter]').evaluateAll(nodes=>nodes.map(n=>Number((n as HTMLElement).dataset.brightness)));
+ await slider.fill('0');await expect.poll(levels).toEqual([0,0,0,0]);
+ await expect.poll(()=>future.locator('[data-letter]').evaluateAll(nodes=>nodes.every(n=>Number((n as HTMLElement).dataset.brightness)===0))).toBe(true);
+ await slider.fill('0.5');await expect.poll(async()=>{const b=await levels();return b[0]===1&&b[1]>0&&b[1]<1&&b[3]===0;}).toBe(true);
+ const colors=await first.locator('[data-letter]').evaluateAll(nodes=>nodes.map(n=>({color:getComputedStyle(n).color,opacity:Number(getComputedStyle(n).opacity)})));
+ expect(colors[0].color).not.toBe(colors[3].color);expect(colors[0].opacity).toBeGreaterThan(colors[3].opacity);
+ await page.screenshot({path:'test-results/letters-partial.png',fullPage:true});
+ const paused=await levels();await page.waitForTimeout(150);expect(await levels()).toEqual(paused);
+ await expect(first.locator('.word-fill')).toHaveCSS('mask-image','none');
+ await slider.fill('1.15');await expect.poll(levels).toEqual([1,1,1,1]);await page.screenshot({path:'test-results/letters-full.png',fullPage:true});
+ await slider.fill('1.6');await expect.poll(async()=>{const b=await levels();return b.every(v=>Math.abs(v-.34)<.001);}).toBe(true);
+ await expect(first).toHaveAttribute('data-phase','sung');await page.screenshot({path:'test-results/letters-sung.png',fullPage:true});
+ await expect.poll(()=>first.locator('[data-letter]').first().evaluate(n=>(n as HTMLElement).style.getPropertyValue('--glow'))).toBe('0');
+ const next=page.locator('[data-word-id="demo-word-0-1"]');await expect(next).toHaveAttribute('data-phase','active');
+ await slider.fill('0.1');await expect(first).toHaveAttribute('data-phase','active');await expect.poll(async()=> (await levels())[3]).toBe(0);await expect(next).toHaveAttribute('data-phase','waiting');
+ await page.screenshot({path:'test-results/per-letter-illumination.png',fullPage:true});
+});
