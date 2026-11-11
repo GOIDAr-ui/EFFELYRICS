@@ -71,13 +71,18 @@ internal static class Program
                 try
                 {
                     using var stream = await properties.Thumbnail.OpenReadAsync();
-                    if (stream.Size > 0 && stream.Size <= 2_000_000 && new[] { "image/jpeg", "image/png", "image/webp" }.Contains(stream.ContentType))
+                    if (stream.Size > 0 && stream.Size <= 2_000_000)
                     {
                         using var reader = new DataReader(stream.GetInputStreamAt(0));
                         var size = (uint)stream.Size;
-                        await reader.LoadAsync(size);
+                        uint loaded = 0;
+                        while (loaded < size) { var count = await reader.LoadAsync(size - loaded); if (count == 0) break; loaded += count; }
+                        if (loaded != size) throw new IOException("Incomplete thumbnail");
                         var bytes = new byte[size]; reader.ReadBytes(bytes);
-                        artwork = $"data:{stream.ContentType};base64,{Convert.ToBase64String(bytes)}";
+                        var mime = bytes.Length >= 8 && bytes[0] == 137 && bytes[1] == 80 && bytes[2] == 78 && bytes[3] == 71 ? "image/png"
+                            : bytes.Length >= 3 && bytes[0] == 255 && bytes[1] == 216 && bytes[2] == 255 ? "image/jpeg"
+                            : bytes.Length >= 12 && Encoding.ASCII.GetString(bytes, 0, 4) == "RIFF" && Encoding.ASCII.GetString(bytes, 8, 4) == "WEBP" ? "image/webp" : null;
+                        if (mime != null) artwork = $"data:{mime};base64,{Convert.ToBase64String(bytes)}";
                     }
                 }
                 catch { /* Artwork is optional. Never fail the media session for it. */ }

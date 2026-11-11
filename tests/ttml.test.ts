@@ -13,3 +13,7 @@ describe('TTMLParser', () => {
   it('parses supported units', () => { expect(parseTime('500ms')).toBe(.5); expect(parseTime('1.5m')).toBe(90); expect(parseTime('01:02:03.500')).toBe(3723.5); expect(() => parseTime('00:99:00')).toThrow(); });
   it('binds imports to a track and does not return stale lyrics', async () => { const provider = new ImportedLyricsProvider(); provider.import('track-a', wrap('<p begin="0s" end="1s">A</p>')); expect((await provider.load('track-a'))?.lines).toHaveLength(1); expect(await provider.load('track-b')).toBeNull(); });
 });
+it('accepts AMLL absolute container and word times without doubling offsets', () => {
+ const d=new TTMLParser().parse('<tt><body dur="00:30.00"><div begin="00:10.00" end="00:20.00"><p begin="00:10.00" end="00:12.00"><span begin="00:10.00" end="00:11.00">A</span></p></div></body></tt>','amll',true);
+ expect(d.lines[0].words[0].start).toBe(10);
+});

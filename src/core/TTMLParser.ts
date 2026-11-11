@@ -8,6 +8,8 @@ function textOf(nodes: Node[]): string {
 /** TTML clock time and h/m/s/ms offsets. Unsupported frame/tick timing is explicit. */
 export function parseTime(raw: unknown): number {
   if (typeof raw !== 'string') throw new Error('Отсутствует временная метка TTML.');
+  const short = /^(\d+):(\d{2}(?:\.\d+)?)$/.exec(raw);
+  if (short) { if (+short[2] >= 60) throw new Error('Некорректные секунды'); return +short[1]*60 + +short[2]; }
   const clock = /^(\d{2,}):(\d{2}):(\d{2}(?:\.\d+)?)$/.exec(raw);
   if (clock) {
     if (+clock[2] >= 60 || +clock[3] >= 60) throw new Error(`Некорректное время: ${raw}`);
@@ -24,7 +26,7 @@ function interval(attrs: Node, parentStart: number, parentEnd: number) {
   return { start, end };
 }
 export class TTMLParser {
-  parse(xml: string, id = 'import'): LyricsDocument {
+  parse(xml: string, id = 'import', absoluteWords = false): LyricsDocument {
     if (xml.length > 2_000_000) throw new Error('TTML слишком большой (максимум 2 МБ).');
     if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw new Error('DTD и внешние сущности не поддерживаются.');
     if (XMLValidator.validate(xml) !== true) throw new Error('Некорректный XML.');
@@ -39,7 +41,7 @@ export class TTMLParser {
         if (!tag) continue;
         const attrs = (node[':@'] ?? {}) as Node;
         if (attrs['@_timeContainer'] && attrs['@_timeContainer'] !== 'par') throw new Error('Поддерживаются только параллельные TTML-контейнеры (par).');
-        const range = interval(attrs, parentStart, parentEnd);
+        const range = interval(attrs, absoluteWords && attrs['@_begin'] !== undefined ? 0 : parentStart, parentEnd);
         const nested = children(node, tag);
         if (tag === 'head') continue;
         if (tag !== 'p') { visit(nested, range.start, range.end, depth + 1); continue; }
@@ -58,7 +60,7 @@ export class TTMLParser {
             if ('br' in part) { if (words.length) words[words.length - 1].text += ' '; continue; }
             if ('span' in part) {
               const a = (part[':@'] ?? {}) as Node;
-              const r = interval(a, start, end);
+              const r = interval(a, absoluteWords && a['@_begin'] !== undefined ? 0 : start, end);
               if (a['@_begin'] !== undefined || a['@_end'] !== undefined || a['@_dur'] !== undefined) wordTimed = true;
               collect(children(part, 'span'), r.start, r.end, depth + 1);
             }
