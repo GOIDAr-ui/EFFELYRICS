@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-electron/
+release/
+.cache/
+native/**/bin/
+native/**/obj/
+native/publish/
+playwright-report/
+test-results/
+*.log
+.env
+.env.*
+!.env.example
