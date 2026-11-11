@@ -1,3 +1,4 @@
+import { automaticLyrics } from './lyrics';
 import { app, BrowserWindow, dialog, ipcMain, session } from 'electron';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
@@ -16,6 +17,14 @@ app.whenReady().then(async () => {
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.webContents.on('will-attach-webview', event => event.preventDefault());
+  let lyricsRequest: AbortController | undefined;
+  ipcMain.handle('lyrics:cancel', event => { trusted(event); lyricsRequest?.abort(); });
+  ipcMain.handle('lyrics:find', async (event, track, choice) => {
+    trusted(event);
+    if (!track || typeof track.title !== 'string' || typeof track.artist !== 'string' || track.title.length > 500 || track.artist.length > 500 || (track.album != null && (typeof track.album !== 'string' || track.album.length > 500)) || (track.duration != null && (typeof track.duration !== 'number' || !Number.isFinite(track.duration))) || (choice != null && (typeof choice !== 'string' || choice.length > 200))) throw Error('Invalid track query');
+    lyricsRequest?.abort(); lyricsRequest = new AbortController();
+    return automaticLyrics.find(track, lyricsRequest.signal, choice);
+  });
   ipcMain.handle('media:snapshot', event => { trusted(event); return adapter.snapshot; });
   ipcMain.handle('media:command', (event, command: unknown) => { trusted(event); if (typeof command !== 'string' || !['toggle', 'next', 'previous'].includes(command)) throw new Error('Invalid command'); return adapter.command(command as MediaCommand); });
   ipcMain.handle('window:fullscreen', event => { trusted(event); window!.setFullScreen(!window!.isFullScreen()); });

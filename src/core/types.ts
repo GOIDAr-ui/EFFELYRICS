@@ -19,6 +19,8 @@ export const emptySnapshot = (message = 'Откройте Apple Music и вкл�
 });
 export interface CommandResult { ok: boolean; error?: string }
 export interface AuroraAPI {
+  findLyrics?(track: import('./AutomaticLyricsService').TrackQuery, choice?: string): Promise<import('./AutomaticLyricsService').AutomaticResult>;
+  cancelLyrics?(): Promise<void>;
   getSnapshot(): Promise<MediaSnapshot>;
   onSnapshot(listener: (snapshot: MediaSnapshot) => void): () => void;
   command(command: MediaCommand): Promise<CommandResult>;
