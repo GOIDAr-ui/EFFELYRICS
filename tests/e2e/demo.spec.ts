@@ -71,3 +71,22 @@ test('visual demo fills letters from clock time and freezes on pause', async ({ 
   await page.getByRole('slider', { name: 'Позиция воспроизведения' }).fill('1.7');
   await expect(page.locator('.word.current .word-fill')).toHaveText('где ');
 });
+test('system seek preview, pointer commit, actual timeline and IPC failure', async ({ page }) => {
+ await page.addInitScript(() => {
+  let position=1; let revision=100;
+  const snapshot=()=>({connection:'connected' as const,trackId:'system',title:'System fixture',artist:'Test',playback:'paused' as const,position,duration:40,rate:1,timelineAge:0,seekSupported:true,timelineUpdatedAt:revision,capabilities:{toggle:true,next:false,previous:false},sessions:[]});
+  window.aurora={getSnapshot:async()=>snapshot(),onSnapshot:listener=>{const h=(e:Event)=>listener((e as CustomEvent).detail);window.addEventListener('seek-fixture',h);return()=>window.removeEventListener('seek-fixture',h);},command:async()=>({ok:true}),fullscreen:async()=>{},importTTML:async()=>({name:'fixture.ttml',content:'<tt><body><p begin="0s" end="10s">Before</p><p begin="10s" end="40s">After</p></body></tt>'}),seek:async target=>{
+   if(target<5)throw Error('IPC fixture');
+   position=target;revision++; window.dispatchEvent(new CustomEvent('seek-fixture',{detail:snapshot()}));
+   return {ok:true,status:'confirmed',requested:target,actual:target};
+  }};
+ });
+ await page.goto('/');await page.getByRole('button',{name:'Импорт TTML',exact:true}).click();
+ const slider=page.getByRole('slider',{name:'Позиция воспроизведения'});await expect(slider).toBeEnabled();
+ await slider.fill('20');await expect(page.locator('.word.current .word-fill')).toHaveText('Before');
+ await slider.dispatchEvent('pointerup');await expect(slider).toHaveValue('20');await expect(page.locator('.word.current .word-fill')).toHaveText('After');
+ const box=(await slider.boundingBox())!;
+ await page.mouse.click(box.x+box.width*.75,box.y+box.height/2);await expect.poll(async()=>Number(await slider.inputValue())).toBeGreaterThan(25);
+ await page.mouse.move(box.x+box.width*.75,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width*.5,box.y+box.height/2,{steps:8});await page.mouse.up();await expect.poll(async()=>Number(await slider.inputValue())).toBeLessThan(25);
+ await slider.fill('2');await slider.dispatchEvent('pointerup');await expect(page.getByText('Ошибка IPC перемотки. Показано фактическое время.',{exact:true})).toBeVisible();await expect.poll(async()=>Number(await slider.inputValue())).toBeGreaterThan(10);
+});

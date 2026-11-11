@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { seekTarget, type SeekResult } from './core/SeekController';
 import type { AutomaticResult } from './core/AutomaticLyricsService';
 import { PlaybackClock } from './core/PlaybackClock';
 import { LyricSyncEngine } from './core/LyricSyncEngine';
@@ -18,6 +19,10 @@ export default function App() {
   const [mode, setMode] = useState<'companion' | 'demo'>('companion');
   const [media, setMedia] = useState<MediaSnapshot>(() => emptySnapshot());
   const [demoPlaying, setDemoPlaying] = useState(false);
+  const [preview, setPreview] = useState<number | null>(null);
+  const previewRef = useRef<number | null>(null);
+  const seekSerial = useRef(0);
+  const [seekInfo, setSeekInfo] = useState<{ requested: number | null; result: string; error?: string }>({ requested: null, result: '—' });
   const [position, setPosition] = useState(0);
   const [lyrics, setLyrics] = useState<LyricsDocument | null>(null);
   const [panel, setPanel] = useState<'diagnostics' | 'settings' | null>(null);
@@ -134,6 +139,26 @@ export default function App() {
     try { const result = await window.aurora.command(value); if (!result.ok) setNotice(result.error ?? 'Команда отклонена.'); }
     catch { setNotice('Не удалось отправить команду.'); } finally { setPending(false); }
   }
+  useEffect(() => { previewRef.current = null; setPreview(null); seekSerial.current++; setSeekInfo({ requested: null, result: '—' }); }, [mode, media.trackId]);
+  function previewSeek(value: number) {
+    const target = seekTarget(value, current.duration); if (target === null) return;
+    if (mode === 'demo') { demoClock.current.seek(target); setPosition(target); }
+    else { previewRef.current = target; setPreview(target); }
+  }
+  async function commitSeek() {
+    const requested = previewRef.current; previewRef.current = null; setPreview(null);
+    if (requested === null || mode !== 'companion') return;
+    const serial = ++seekSerial.current;
+    setSeekInfo({ requested, result: 'pending' });
+    try {
+      const result: SeekResult = window.aurora?.seek ? await window.aurora.seek(requested) : { ok: false, status: 'rejected', requested, actual: media.position, error: 'IPC перемотки недоступен.' };
+      if (serial !== seekSerial.current) return;
+      setSeekInfo({ requested, result: result.status, error: result.error });
+      if (!result.ok) setNotice(result.error ?? 'Apple Music не подтвердила перемотку.');
+    } catch { if (serial === seekSerial.current) { setSeekInfo({ requested, result: 'rejected', error: 'Ошибка IPC перемотки.' }); setNotice('Ошибка IPC перемотки. Показано фактическое время.'); } }
+  }
+  const seekEnabled = mode === 'demo' || (media.seekSupported === true && !!window.aurora?.seek);
+  const sliderPosition = preview ?? position;
   async function importFile(browserFile?: File) {
     const binding = { ...currentIdentity.current }, generation = ++importGeneration.current;
     if (!binding.id) { setNotice('Сначала выберите деморежим или запустите трек в Apple Music.'); return; }
@@ -167,7 +192,7 @@ export default function App() {
         <div className="eyebrow"><span className="live-dot"/> {mode === 'demo' ? 'A LITTLE PREVIEW OF THE MAGIC' : 'YOUR MUSIC. A NEW PERSPECTIVE.'}</div>
         <div className="cover-wrap"><div className="cover-shadow"/>{current.artwork ? <img className="album-cover" src={current.artwork} alt="Обложка текущего альбома"/> : mode === 'companion' ? <div className="album-cover neutral-cover" role="img" aria-label="Обложка не передана Windows"><Icon name="music" size={48}/><span>Обложка не передана Windows</span></div> : <div className="album-cover original-cover" role="img" aria-label="Оригинальная абстрактная обложка Aurora: янтарное сияние над фиолетовым горизонтом"><div className="cover-orb"/><div className="cover-horizon"/><span className="cover-label">AURORA STUDIO<span>FIRST LIGHT</span></span><span className="cover-number">01 / ORIGINAL</span></div>}<span className="cover-badge"><Icon name="music" size={13}/>{mode === 'demo' ? 'ORIGINAL DEMO' : 'APPLE MUSIC'}</span></div>
         <div className="track-info"><div><h1>{current.title || (connected ? 'Без названия' : 'В ожидании музыки')}</h1><p>{current.artist || (connected ? 'Неизвестный исполнитель' : 'Ваша музыка появится здесь')}</p></div><span className="audio-wave" aria-hidden="true"><i/><i/><i/><i/></span></div>
-        <div className="timeline"><input aria-label="Позиция воспроизведения" type="range" min="0" max={current.duration ?? 1} step="0.01" value={current.duration === null ? 0 : Math.min(position, current.duration)} disabled={mode !== 'demo'} onChange={event => { demoClock.current.seek(+event.target.value); setPosition(+event.target.value); }} style={{ '--progress': `${current.duration ? Math.min(100, position / current.duration * 100) : 0}%` } as React.CSSProperties}/><div className="time-labels"><span>{mode === 'companion' && current.position === null ? '—:—' : format(position)}</span><span>{format(current.duration)}</span></div></div>
+        <div className="timeline"><input aria-label="Позиция воспроизведения" type="range" min="0" max={current.duration ?? 1} step="0.01" value={current.duration === null ? 0 : Math.min(sliderPosition, current.duration)} disabled={!seekEnabled || !current.duration || current.duration <= 0} title={seekEnabled ? 'Нажмите или перетащите для перемотки' : media.seekSupported === false ? 'Системная медиасессия не поддерживает перемотку' : 'Поддержка перемотки неизвестна'} onChange={event => previewSeek(+event.target.value)} onPointerUp={() => { void commitSeek(); }} onKeyUp={() => { void commitSeek(); }} onBlur={() => { void commitSeek(); }} onPointerCancel={() => { previewRef.current = null; setPreview(null); }} style={{ '--progress': `${current.duration ? Math.min(100, sliderPosition / current.duration * 100) : 0}%` } as React.CSSProperties}/><div className="time-labels"><span>{mode === 'companion' && current.position === null && preview === null ? '—:—' : format(sliderPosition)}{preview !== null ? ' · preview' : ''}</span><span>{format(current.duration)}</span></div>{mode === 'companion' && <small className="seek-hint">{!seekEnabled ? media.seekSupported === false ? 'Перемотка недоступна в этой медиасессии' : 'Поддержка перемотки неизвестна' : seekInfo.result === 'pending' ? 'Ожидаю подтверждения Apple Music…' : seekInfo.result === 'unconfirmed' || seekInfo.result === 'rejected' ? 'Показана фактическая позиция Apple Music' : ''}</small>}</div>
         <div className="transport"><button className="icon-button skip" aria-label={mode === 'demo' ? 'Предыдущий фрагмент' : 'Предыдущий трек'} disabled={!current.capabilities.previous || pending} onClick={() => { void command('previous'); }}><Icon name="previous" size={28}/></button><button className="play-button" aria-label={playing ? 'Пауза' : 'Воспроизвести'} disabled={!current.capabilities.toggle || pending} onClick={() => { void command('toggle'); }}><Icon name={playing ? 'pause' : 'play'} size={29}/></button><button className="icon-button skip" aria-label={mode === 'demo' ? 'Следующий фрагмент' : 'Следующий трек'} disabled={!current.capabilities.next || pending} onClick={() => { void command('next'); }}><Icon name="next" size={28}/></button></div>
         <div className={`connection ${connected ? 'online' : ''}`}><span className="status-dot"/>{mode === 'demo' ? 'Демонстрация · без воспроизведения аудио' : connected ? 'Подключено к Apple Music' : 'Apple Music не подключена'}</div>
         {!connected && <button className="demo-offer" onClick={() => switchMode('demo')}>Попробовать деморежим <span>↗</span></button>}
@@ -179,7 +204,7 @@ export default function App() {
         <div className="lyrics-caption"><span className="spark">✦</span>{mode === 'demo' ? 'Оригинальный текст. Создан для Aurora.' : current.position === null && connected ? 'Windows не передаёт позицию — синхронизация недоступна.' : 'Текст следует за музыкой. В вашем ритме.'}</div>
       </section>
     </main>
-    <footer className="bottom-bar"><div className="footer-note"><span className="footer-spark">✦</span>Less noise. More feeling.<span className="version">v0.1.1 — First light</span></div><div className="footer-actions"><button className="text-button" onClick={() => { void importFile(); }}><Icon name="upload" size={16}/>Импорт TTML</button><span className="divider"/><button className={`text-button ${panel === 'settings' ? 'chosen' : ''}`} onClick={() => setPanel(panel === 'settings' ? null : 'settings')}><Icon name="sliders" size={16}/>Настройки</button></div></footer>
+    <footer className="bottom-bar"><div className="footer-note"><span className="footer-spark">✦</span>Less noise. More feeling.<span className="version">v0.1.2 — First light</span></div><div className="footer-actions"><button className="text-button" onClick={() => { void importFile(); }}><Icon name="upload" size={16}/>Импорт TTML</button><span className="divider"/><button className={`text-button ${panel === 'settings' ? 'chosen' : ''}`} onClick={() => setPanel(panel === 'settings' ? null : 'settings')}><Icon name="sliders" size={16}/>Настройки</button></div></footer>
     <input ref={fileInput} type="file" accept=".ttml,.xml" hidden onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void importFile(file); }}/>
     {notice && <div className="notice" role="status"><span>{notice}</span><button className="icon-button" aria-label="Закрыть уведомление" onClick={() => setNotice('')}><Icon name="close" size={16}/></button></div>}
     {panel && <aside className="utility-panel" aria-label={panel === 'settings' ? 'Настройки' : 'Диагностика'}><div className="panel-title"><h2>{panel === 'settings' ? 'Настройки' : 'Диагностика сессии'}</h2><button className="icon-button" aria-label="Закрыть панель" onClick={() => setPanel(null)}><Icon name="close"/></button></div>{panel === 'settings' ? <>
@@ -190,7 +215,7 @@ export default function App() {
       <p className="panel-description">Эффекты смысла слов появятся в следующих версиях. В v0.1 работает независимая пословная синхронизация.</p>
     </> : <>
       <span className="diagnostic-tag">РЕАЛЬНЫЕ ДАННЫЕ WINDOWS · НЕ ДЕМО</span><p className="panel-description">{media.message ?? 'Данные получены через GSMTC.'}</p>
-      <dl>{Object.entries({ 'Источник текста': mode === 'demo' ? 'Demo' : searchStatus, 'Поиск': automatic?.status ?? '—', 'Строки': String(lyrics?.lines.length ?? 0), 'Слова': String(lyrics?.lines.reduce((n,l) => n+l.words.length,0) ?? 0), 'Синхронизация': lyrics?.timing.toUpperCase() ?? 'NONE', 'Текущее слово': lyrics?.lines[selection.lineIndex]?.words[selection.wordIndex]?.text ?? '—', 'Fill': String(Math.round(Number(document.querySelector('.word.current')?.getAttribute('data-progress') ?? 0)*100))+'%', 'Offset': String(preferences.offset), 'Соединение': media.connection, 'Источник': media.sourceId ?? '—', 'Трек': media.title ?? '—', 'Исполнитель': media.artist ?? '—', 'Альбом': media.album ?? '—', 'Обложка': media.artwork ? 'Доступна' : 'Не передана', 'Состояние': media.playback, 'Позиция': media.position === null ? 'Не передана' : `${media.position.toFixed(2)} с`, 'Длительность': format(media.duration), 'Возраст timeline': `${media.timelineAge.toFixed(2)} с`, 'Play/Pause': String(media.capabilities.toggle), 'Next': String(media.capabilities.next), 'Previous': String(media.capabilities.previous), 'Сессии': media.sessions.join(', ') || 'Нет', 'ID трека': media.trackId || '—' }).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>
+      <dl>{Object.entries({ 'Источник текста': mode === 'demo' ? 'Demo' : searchStatus, 'Поиск': automatic?.status ?? '—', 'Строки': String(lyrics?.lines.length ?? 0), 'Слова': String(lyrics?.lines.reduce((n,l) => n+l.words.length,0) ?? 0), 'Синхронизация': lyrics?.timing.toUpperCase() ?? 'NONE', 'Текущее слово': lyrics?.lines[selection.lineIndex]?.words[selection.wordIndex]?.text ?? '—', 'Fill': String(Math.round(Number(document.querySelector('.word.current')?.getAttribute('data-progress') ?? 0)*100))+'%', 'Offset': String(preferences.offset), 'Seek supported': media.seekSupported === true ? 'yes' : media.seekSupported === false ? 'no' : 'unknown', 'Requested position': seekInfo.requested === null ? '—' : seekInfo.requested.toFixed(2)+' с', 'Actual position': media.position === null ? '—' : media.position.toFixed(2)+' с', 'Seek command result': seekInfo.result, 'Last seek error': seekInfo.error ?? '—', 'Ограничение seek': !media.seekSupported ? 'Windows не подтвердила поддержку системной перемотки' : 'Успех только после свежего timeline Apple Music', 'Соединение': media.connection, 'Источник': media.sourceId ?? '—', 'Трек': media.title ?? '—', 'Исполнитель': media.artist ?? '—', 'Альбом': media.album ?? '—', 'Обложка': media.artwork ? 'Доступна' : 'Не передана', 'Состояние': media.playback, 'Позиция': media.position === null ? 'Не передана' : `${media.position.toFixed(2)} с`, 'Длительность': format(media.duration), 'Возраст timeline': `${media.timelineAge.toFixed(2)} с`, 'Play/Pause': String(media.capabilities.toggle), 'Next': String(media.capabilities.next), 'Previous': String(media.capabilities.previous), 'Сессии': media.sessions.join(', ') || 'Нет', 'ID трека': media.trackId || '—' }).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl>
     </>}</aside>}
   </div>;
 }
