@@ -26,6 +26,7 @@ app.whenReady().then(async () => {
     return automaticLyrics.find(track, lyricsRequest.signal, choice);
   });
   ipcMain.handle('media:snapshot', event => { trusted(event); return adapter.snapshot; });
+  ipcMain.handle('media:seek', (event, position: unknown) => { trusted(event); if (typeof position !== 'number' || !Number.isFinite(position) || position < 0) throw Error('Invalid seek position'); return adapter.seek(position); });
   ipcMain.handle('media:command', (event, command: unknown) => { trusted(event); if (typeof command !== 'string' || !['toggle', 'next', 'previous'].includes(command)) throw new Error('Invalid command'); return adapter.command(command as MediaCommand); });
   ipcMain.handle('window:fullscreen', event => { trusted(event); window!.setFullScreen(!window!.isFullScreen()); });
   ipcMain.handle('lyrics:import', async event => {

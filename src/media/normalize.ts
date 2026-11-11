@@ -9,6 +9,7 @@ export function normalizeSnapshot(value: unknown): MediaSnapshot {
   const artwork = typeof v.artwork === 'string' && v.artwork.length < 3_000_000 && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(v.artwork) ? v.artwork : undefined;
   return {
     connection: connected ? 'connected' : v.connection === 'error' ? 'error' : 'unavailable',
+    seekSupported: connected ? typeof v.seekSupported === 'boolean' ? v.seekSupported : null : false, timelineUpdatedAt: number('timelineUpdatedAt') ?? 0,
     message: text('message'), sourceId: text('sourceId'), trackId: text('trackId') ?? '',
     title: text('title'), artist: text('artist'), album: text('album'), artwork,
     playback: v.playback === 'playing' ? 'playing' : v.playback === 'paused' ? 'paused' : 'stopped',

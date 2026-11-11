@@ -8,6 +8,7 @@ export interface MediaSnapshot {
   message?: string; sourceId?: string; trackId: string;
   title?: string; artist?: string; album?: string; artwork?: string;
   playback: PlaybackState; position: number | null; duration: number | null;
+  seekSupported?: boolean | null; timelineUpdatedAt?: number;
   rate: number; timelineAge: number;
   capabilities: Record<MediaCommand, boolean>;
   sessions: string[];
@@ -21,6 +22,7 @@ export interface CommandResult { ok: boolean; error?: string }
 export interface AuroraAPI {
   findLyrics?(track: import('./AutomaticLyricsService').TrackQuery, choice?: string): Promise<import('./AutomaticLyricsService').AutomaticResult>;
   cancelLyrics?(): Promise<void>;
+  seek?(position: number): Promise<import('./SeekController').SeekResult>;
   getSnapshot(): Promise<MediaSnapshot>;
   onSnapshot(listener: (snapshot: MediaSnapshot) => void): () => void;
   command(command: MediaCommand): Promise<CommandResult>;
