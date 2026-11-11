@@ -3,6 +3,7 @@ import type { AuroraAPI, MediaSnapshot } from '../src/core/types';
 let lastArtwork: string | undefined;
 let revision = 0;
 const api: AuroraAPI = {
+  seek: position => ipcRenderer.invoke('media:seek', position),
   findLyrics: (track, choice) => ipcRenderer.invoke('lyrics:find', track, choice),
   cancelLyrics: () => ipcRenderer.invoke('lyrics:cancel'),
   getSnapshot: async () => { const before = revision; const snapshot: MediaSnapshot = await ipcRenderer.invoke('media:snapshot'); if (before === revision) lastArtwork = snapshot.artwork; return snapshot; },

@@ -106,7 +106,7 @@ internal static class Program
             trackId,
             title = properties?.Title, artist = properties?.Artist, album = properties?.AlbumTitle, artwork = artwork != lastSentArtwork || trackId != lastSentTrackId ? artwork : null, artworkChanged = artwork != lastSentArtwork || trackId != lastSentTrackId,
             playback = playing ? "playing" : info.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused ? "paused" : "stopped",
-            position = positionKnown ? (double?)position : null, duration = duration > 0 ? (double?)duration : null, rate, timelineAge = age,
+            position = positionKnown ? (double?)position : null, duration = duration > 0 ? (double?)duration : null, rate, timelineAge = age, seekSupported = controls.IsPlaybackPositionEnabled, timelineUpdatedAt = positionKnown ? timeline.LastUpdatedTime.ToUnixTimeMilliseconds() : 0,
             capabilities = new { toggle = controls.IsPlayPauseToggleEnabled, next = controls.IsNextEnabled, previous = controls.IsPreviousEnabled },
             sessions = sessions.Select(s => s.SourceAppUserModelId).ToArray()
         }});
@@ -123,6 +123,29 @@ internal static class Program
                 using var request = JsonDocument.Parse(line);
                 id = request.RootElement.GetProperty("id").GetInt32();
                 var command = request.RootElement.GetProperty("command").GetString();
+                if (command == "seek")
+                {
+                    if (dirty || sessionsDirty) await Snapshot();
+                    var expected = request.RootElement.GetProperty("trackId").GetString();
+                    var seconds = request.RootElement.GetProperty("position").GetDouble();
+                    var allowed = selected != null && expected == lastSentTrackId && selected.GetPlaybackInfo().Controls.IsPlaybackPositionEnabled;
+                    var accepted = false;
+                    if (allowed && double.IsFinite(seconds) && seconds >= 0)
+                    {
+                        var t = selected!.GetTimelineProperties();
+                        var length = (t.EndTime - t.StartTime).TotalSeconds;
+                        if (length > 0 && seconds <= length)
+                        {
+                            // UI seconds relative to StartTime -> absolute TimeSpan 100ns ticks.
+                            var ticks = checked(t.StartTime.Ticks + TimeSpan.FromSeconds(seconds).Ticks);
+                            if (t.MaxSeekTime <= t.MinSeekTime || (ticks >= t.MinSeekTime.Ticks && ticks <= t.MaxSeekTime.Ticks))
+                                accepted = await selected.TryChangePlaybackPositionAsync(ticks);
+                        }
+                    }
+                    Send(new { kind = "result", id, ok = accepted, error = accepted ? null : "Сессия не поддерживает перемотку, позиция вне диапазона или Apple Music отказала." });
+                    await Snapshot();
+                    continue;
+                }
                 var controls = selected?.GetPlaybackInfo().Controls;
                 var ok = selected != null && controls != null && (command switch {
                     "toggle" when controls.IsPlayPauseToggleEnabled => await selected.TryTogglePlayPauseAsync(),

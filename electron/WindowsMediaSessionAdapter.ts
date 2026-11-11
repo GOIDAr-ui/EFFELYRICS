@@ -1,3 +1,4 @@
+import { SeekController } from '../src/core/SeekController';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { EventEmitter } from 'node:events';
@@ -5,6 +6,8 @@ import { emptySnapshot, type MediaCommand, type MediaSnapshot, type CommandResul
 import { normalizeSnapshot } from '../src/media/normalize';
 export class WindowsMediaSessionAdapter extends EventEmitter {
   snapshot: MediaSnapshot = emptySnapshot();
+  private seeks = new SeekController(this.snapshot, (position, trackId) => this.send('seek', { position, trackId }));
+  seek(position: number) { return this.seeks.request(position); }
   private child?: ChildProcessWithoutNullStreams;
   private serial = 0;
   private pending = new Map<number, { resolve: (result: CommandResult) => void; timer: ReturnType<typeof setTimeout> }>();
@@ -43,15 +46,19 @@ export class WindowsMediaSessionAdapter extends EventEmitter {
     });
     child.stdin.on('error', () => { /* Exit handler settles outstanding commands. */ });
   }
-  private publish(snapshot: MediaSnapshot) { this.snapshot = snapshot; this.emit('snapshot', snapshot); }
+  private publish(snapshot: MediaSnapshot) { this.snapshot = snapshot; this.seeks.observe(snapshot); this.emit('snapshot', snapshot); }
   command(command: MediaCommand): Promise<CommandResult> {
     if (!this.child?.stdin.writable || !this.snapshot.capabilities[command]) return Promise.resolve({ ok: false, error: 'Команда недоступна в текущей сессии.' });
+    return this.send(command);
+  }
+  private send(command: string, extra: Record<string, unknown> = {}): Promise<CommandResult> {
+    if (!this.child?.stdin.writable) return Promise.resolve({ ok: false, error: 'Windows-мост недоступен.' });
     const id = ++this.serial;
     return new Promise(resolve => {
       const timer = setTimeout(() => { this.pending.delete(id); resolve({ ok: false, error: 'Apple Music не ответила на команду.' }); }, 5000);
       this.pending.set(id, { resolve, timer });
-      this.child!.stdin.write(JSON.stringify({ id, command }) + '\n');
+      this.child!.stdin.write(JSON.stringify({ id, command, ...extra }) + '\n');
     });
   }
-  dispose() { this.child?.kill(); }
+  dispose() { this.seeks.dispose(); this.child?.kill(); }
 }
