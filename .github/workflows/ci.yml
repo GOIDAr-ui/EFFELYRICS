@@ -1,0 +1,58 @@
+name: Validate and package Windows
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-diagnostics
+          path: test-results/
+          retention-days: 7
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run dist:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Verify installer, portable and bundled WinRT bridge
+        shell: pwsh
+        run: |
+          $exe = @(Get-ChildItem release -Filter *.exe)
+          if ($exe.Count -ne 2) { throw "Expected installer and portable executables" }
+          if (!(Test-Path release/win-unpacked/resources/bridge/WindowsMediaBridge.exe)) { throw "Missing WinRT bridge" }
+          Get-FileHash $exe.FullName -Algorithm SHA256 | Format-Table -AutoSize
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Aurora-Lyrics-Windows-x64
+          path: release/*.exe
+          if-no-files-found: error
+          retention-days: 14

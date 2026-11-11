@@ -1,0 +1,42 @@
+import { app, BrowserWindow, dialog, ipcMain, session } from 'electron';
+import { readFile, stat } from 'node:fs/promises';
+import path from 'node:path';
+import { WindowsMediaSessionAdapter } from './WindowsMediaSessionAdapter';
+import type { MediaCommand } from '../src/core/types';
+const adapter = new WindowsMediaSessionAdapter();
+let window: BrowserWindow | null = null;
+const devURL = !app.isPackaged && process.env.AURORA_DEV_URL === 'http://127.0.0.1:5173' ? process.env.AURORA_DEV_URL : undefined;
+function trusted(event: Electron.IpcMainInvokeEvent) {
+  if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) throw new Error('Untrusted IPC sender');
+}
+app.whenReady().then(async () => {
+  session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  window = new BrowserWindow({ width: 1440, height: 940, minWidth: 840, minHeight: 640, backgroundColor: '#14131c', title: 'Aurora Lyrics', autoHideMenuBar: true,
+    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true, devTools: !app.isPackaged } });
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-navigate', event => event.preventDefault());
+  window.webContents.on('will-attach-webview', event => event.preventDefault());
+  ipcMain.handle('media:snapshot', event => { trusted(event); return adapter.snapshot; });
+  ipcMain.handle('media:command', (event, command: unknown) => { trusted(event); if (typeof command !== 'string' || !['toggle', 'next', 'previous'].includes(command)) throw new Error('Invalid command'); return adapter.command(command as MediaCommand); });
+  ipcMain.handle('window:fullscreen', event => { trusted(event); window!.setFullScreen(!window!.isFullScreen()); });
+  ipcMain.handle('lyrics:import', async event => {
+    trusted(event);
+    const result = await dialog.showOpenDialog(window!, { title: 'Импорт TTML', filters: [{ name: 'Timed Text', extensions: ['ttml', 'xml'] }], properties: ['openFile'] });
+    if (result.canceled || result.filePaths.length !== 1) return null;
+    const file = result.filePaths[0];
+    if ((await stat(file)).size > 2_000_000) throw new Error('TTML слишком большой (максимум 2 МБ).');
+    return { name: path.basename(file), content: await readFile(file, 'utf8') };
+  });
+  let lastArtwork: string | undefined;
+  adapter.on('snapshot', snapshot => {
+    if (!window || window.isDestroyed()) return;
+    const { artwork, ...rest } = snapshot;
+    window.webContents.send('media:changed', artwork === lastArtwork ? rest : { ...rest, artwork: artwork ?? null });
+    lastArtwork = artwork;
+  });
+  adapter.start(app.isPackaged ? path.join(process.resourcesPath, 'bridge', 'WindowsMediaBridge.exe') : path.join(app.getAppPath(), 'native', 'publish', 'win-x64', 'WindowsMediaBridge.exe'));
+  if (devURL) await window.loadURL(devURL); else await window.loadFile(path.join(__dirname, '../dist/index.html'));
+  window.on('closed', () => { window = null; });
+});
+app.on('window-all-closed', () => app.quit());
+app.on('before-quit', () => adapter.dispose());

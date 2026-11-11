@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<tt xmlns="http://www.w3.org/ns/ttml"><body><div>
+  <p begin="0s" end="5s"><span begin="0s" end="1.15s">Там, </span><span begin="1.15s" end="2.3s">где </span><span begin="2.3s" end="3.45s">город </span><span begin="3.45s" end="4.6s">засыпает,</span></p>
+  <p begin="5s" end="10s"><span begin="0s" end="1.15s">Мы </span><span begin="1.15s" end="2.3s">рисуем </span><span begin="2.3s" end="3.45s">новый </span><span begin="3.45s" end="4.6s">свет.</span></p>
+</div></body></tt>
